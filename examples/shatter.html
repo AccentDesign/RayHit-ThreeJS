@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>rayhit-three — Shatter (geometry)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 system-ui, sans-serif; background: #0e0f12; color: #e7e7ea; overflow: hidden; }
+  #ui {
+    position: fixed; top: 12px; left: 12px; z-index: 10; width: 230px;
+    background: #181a20cc; backdrop-filter: blur(6px); border: 1px solid #2a2d36;
+    border-radius: 10px; padding: 14px;
+  }
+  #ui h1 { font-size: 14px; margin: 0 0 2px; letter-spacing: .3px; }
+  #ui .sub { color: #8b90a0; font-size: 11px; margin-bottom: 12px; }
+  label { display: block; margin: 9px 0 3px; color: #aab; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+  select, input[type=range] { width: 100%; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .val { width: 38px; text-align: right; color: #9fd; font-variant-numeric: tabular-nums; }
+  button {
+    width: 100%; margin-top: 12px; padding: 9px; border: 0; border-radius: 7px;
+    background: #4f7cff; color: #fff; font-weight: 600; cursor: pointer; font-size: 13px;
+  }
+  button.alt { background: #2a2d36; }
+  button:hover { filter: brightness(1.1); }
+  #stat { margin-top: 10px; color: #7fd6a0; font-size: 11px; min-height: 14px; }
+  #hint { position: fixed; bottom: 10px; left: 12px; color: #6b7080; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>rayhit-three</h1>
+  <div class="sub">Voronoi fracture · geometry kernel</div>
+
+  <label>Shape</label>
+  <select id="shape">
+    <option value="box">Box</option>
+    <option value="sphere">Sphere</option>
+    <option value="cyl">Cylinder</option>
+    <option value="knot">Torus Knot</option>
+  </select>
+
+  <label>Fragment type</label>
+  <select id="type">
+    <option value="voronoi">Voronoi</option>
+    <option value="splinters">Splinters</option>
+    <option value="slabs">Slabs</option>
+    <option value="radial">Radial</option>
+    <option value="bricks">Bricks</option>
+    <option value="voxels">Voxels</option>
+    <option value="tets">Tets</option>
+  </select>
+
+  <label>Amount <span class="val" id="amountV">40</span></label>
+  <input type="range" id="amount" min="3" max="300" value="40" />
+
+  <label>Seed <span class="val" id="seedV">1</span></label>
+  <input type="range" id="seed" min="0" max="50" value="1" />
+
+  <label>Explode <span class="val" id="explodeV">0.0</span></label>
+  <input type="range" id="explode" min="0" max="100" value="0" />
+
+  <button id="go">Shatter</button>
+  <button id="reset" class="alt">Reset</button>
+  <div id="stat"></div>
+</div>
+<div id="hint">drag to orbit · scroll to zoom</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "../node_modules/three/build/three.module.js",
+    "three/addons/": "../node_modules/three/examples/jsm/",
+    "rayhit-three": "../src/index.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { shatter, setThree } from 'rayhit-three';
+
+setThree(THREE);
+
+// ---- scene ----
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0f12);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(4, 3, 6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xbfd3ff, 0x202028, 0.8));
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(5, 8, 4); key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024); scene.add(key);
+const grid = new THREE.GridHelper(20, 20, 0x2a2d36, 0x1a1c22);
+grid.position.y = -2; scene.add(grid);
+
+// ---- materials: distinct outer + inner so cut faces are visible ----
+const outerMat = new THREE.MeshStandardMaterial({ color: 0x4f9dff, roughness: 0.5, metalness: 0.1 });
+const innerMat = new THREE.MeshStandardMaterial({ color: 0xffae42, roughness: 0.9, metalness: 0 });
+
+let source = null, fragGroup = null, frags = [];
+
+function makeGeometry(kind) {
+  switch (kind) {
+    case 'sphere': return new THREE.SphereGeometry(1.6, 32, 24);
+    case 'cyl': return new THREE.CylinderGeometry(1.2, 1.2, 3, 32);
+    case 'knot': return new THREE.TorusKnotGeometry(1.1, 0.38, 120, 18);
+    default: return new THREE.BoxGeometry(2.6, 2.6, 2.6);
+  }
+}
+
+function buildSource() {
+  if (source) scene.remove(source);
+  clearFragments();
+  source = new THREE.Mesh(makeGeometry($('shape').value), outerMat);
+  source.castShadow = true;
+  scene.add(source);
+  $('stat').textContent = '';
+}
+
+function clearFragments() {
+  if (fragGroup) { scene.remove(fragGroup); fragGroup.traverse(o => o.geometry?.dispose?.()); }
+  fragGroup = null; frags = [];
+}
+
+function options() {
+  const type = $('type').value;
+  const amount = +$('amount').value;
+  const seed = +$('seed').value;
+  const o = { type, amount, seed, THREE, innerMaterial: innerMat };
+  if (type === 'radial') o.radial = { axis: 'z', rings: 8, rays: Math.max(6, amount / 4 | 0), radius: 1 };
+  if (type === 'splinters' || type === 'slabs') { o.axis = 'y'; o.strength = 0.7; }
+  if (type === 'bricks') o.bricks = { nx: 4, ny: 6, nz: 4 };
+  if (type === 'voxels') o.voxels = { size: 3.2 / Math.cbrt(amount) };
+  if (type === 'tets') o.tets = { density: Math.max(3, Math.cbrt(amount) | 0 + 2), noise: 0.6 };
+  return o;
+}
+
+async function doShatter() {
+  if (!source) return;
+  $('go').disabled = true; $('stat').textContent = 'fracturing…';
+  const t0 = performance.now();
+  const result = await shatter(source, options());
+  const ms = (performance.now() - t0).toFixed(0);
+  source.visible = false;
+  clearFragments();
+  fragGroup = result.group;
+  scene.add(fragGroup);
+  // give each fragment an outward direction for the explode slider
+  const center = new THREE.Vector3();
+  frags = result.fragments.map(f => {
+    const base = f.mesh.position.clone();
+    const dir = base.clone().sub(center);
+    if (dir.lengthSq() < 1e-6) dir.set(Math.random() - .5, Math.random() - .5, Math.random() - .5);
+    dir.normalize();
+    return { mesh: f.mesh, base, dir, spin: new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5) };
+  });
+  $('stat').textContent = `${frags.length} fragments · ${ms} ms`;
+  $('go').disabled = false;
+  applyExplode();
+}
+
+function applyExplode() {
+  const e = +$('explode').value / 100;
+  for (const f of frags) {
+    f.mesh.position.copy(f.base).addScaledVector(f.dir, e * 3);
+    f.mesh.rotation.set(f.spin.x * e * 3, f.spin.y * e * 3, f.spin.z * e * 3);
+  }
+}
+
+function $(id) { return document.getElementById(id); }
+for (const id of ['amount', 'seed', 'explode']) $(id).addEventListener('input', () => {
+  $(id + 'V').textContent = id === 'explode' ? (+$(id).value / 100).toFixed(1) : $(id).value;
+  if (id === 'explode') applyExplode();
+});
+$('go').addEventListener('click', doShatter);
+$('reset').addEventListener('click', () => { buildSource(); if (source) source.visible = true; });
+$('shape').addEventListener('change', buildSource);
+
+buildSource();
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+(function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+</script>
+</body>
+</html>

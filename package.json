@@ -1,0 +1,50 @@
+{
+  "name": "rayhit-three",
+  "version": "0.1.0",
+  "description": "Runtime mesh fracturing & physics destruction for three.js: Voronoi/Splinters/Slabs/Radial/Bricks/Voxels/Tets/Slices shattering, runtime demolition, bombs, fade, structural + load-stress collapse, gun, blade, dust/debris, pluggable physics.",
+  "type": "module",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./physics/rapier": "./src/physics/RapierAdapter.js",
+    "./physics/cannon": "./src/physics/CannonAdapter.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "test": "node test/run.js",
+    "demo": "python3 -m http.server 8088"
+  },
+  "keywords": [
+    "three",
+    "threejs",
+    "fracture",
+    "voronoi",
+    "destruction",
+    "demolition",
+    "shatter",
+    "rayhit",
+    "physics",
+    "rapier",
+    "cannon",
+    "slice",
+    "fragment"
+  ],
+  "peerDependencies": {
+    "three": "^0.185.0"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": false
+    }
+  },
+  "license": "MIT",
+  "author": "nickaccent",
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3"
+  }
+}

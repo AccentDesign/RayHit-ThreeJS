@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+
+# Third-party demo assets (Synty Studios) — licensed, NOT redistributable.
+# The character demo (examples/character.html) loads these; supply your own.
+examples/models/*.fbx
+examples/models/*.glb
+examples/models/*.png

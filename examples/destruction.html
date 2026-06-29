@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>rayhit-three — Destruction (physics)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 13px/1.5 system-ui, sans-serif; background: #0b0c0f; color: #e7e7ea; overflow: hidden; }
+  #ui { position: fixed; top: 12px; left: 12px; z-index: 10; width: 240px;
+    background: #181a20cc; backdrop-filter: blur(6px); border: 1px solid #2a2d36; border-radius: 10px; padding: 14px; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  .sub { color: #8b90a0; font-size: 11px; margin-bottom: 10px; }
+  button { width: 100%; margin-top: 8px; padding: 9px; border: 0; border-radius: 7px; background: #ff5a4f; color: #fff; font-weight: 600; cursor: pointer; }
+  button.alt { background: #2a2d36; }
+  button:hover { filter: brightness(1.1); }
+  label { display:block; margin: 8px 0 2px; color:#aab; font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+  select { width: 100%; }
+  #stat { margin-top: 10px; color: #7fd6a0; font-size: 11px; min-height: 14px; }
+  #legend { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
+    background: #181a20cc; backdrop-filter: blur(6px); border: 1px solid #2a2d36; border-radius: 10px;
+    padding: 9px 14px; display: flex; gap: 14px; align-items: center; font-size: 12px; color: #c7ccd6; flex-wrap: wrap; justify-content: center; max-width: 92vw; }
+  #legend b { color: #fff; }
+  kbd { background: #2a2d36; border: 1px solid #3a3e48; border-bottom-width: 2px; border-radius: 5px;
+    padding: 1px 6px; font: 600 11px/1.4 ui-monospace, monospace; color: #e7e7ea; margin-right: 4px; }
+  #legend .g { color: #7a8089; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>rayhit-three</h1>
+  <div class="sub">runtime demolition · Rapier physics</div>
+  <label>Material</label>
+  <select id="mat">
+    <option>Concrete</option><option>Brick</option><option>Glass</option>
+    <option>Wood</option><option>DenseRock</option><option>Ice</option>
+  </select>
+  <button id="shoot">Launch projectile  (Space)</button>
+  <button id="bomb" class="alt">Detonate bomb  (B)</button>
+  <button id="rebuild" class="alt">Rebuild wall  (R)</button>
+  <div id="stat">loading physics…</div>
+</div>
+<div id="legend">
+  <span><kbd>L-click</kbd>Gun — blow a hole</span>
+  <span><kbd>X</kbd>Blade — slice block under cursor</span>
+  <span><kbd>Space</kbd>Projectile</span>
+  <span><kbd>B</kbd>Bomb</span>
+  <span><kbd>R</kbd>Rebuild</span>
+  <span class="g">drag to orbit · scroll to zoom</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "../node_modules/three/build/three.module.js",
+    "three/addons/": "../node_modules/three/examples/jsm/",
+    "@dimforge/rapier3d-compat": "../node_modules/@dimforge/rapier3d-compat/rapier.mjs",
+    "rayhit-three": "../src/index.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import RAPIER from '@dimforge/rapier3d-compat';
+import { RayHitMan, RapierAdapter, RayHitBomb, RayHitGun, RayHitBlade, setThree, MaterialType, SimType, FadeType } from 'rayhit-three';
+
+setThree(THREE);
+const $ = id => document.getElementById(id);
+
+// ---- renderer / scene ----
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0c0f);
+scene.fog = new THREE.Fog(0x0b0c0f, 20, 55);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(10, 7, 14);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2, 0); controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xbfd3ff, 0x14161c, 0.7));
+const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+sun.position.set(8, 14, 6); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -20; sun.shadow.camera.right = 20; sun.shadow.camera.top = 20; sun.shadow.camera.bottom = -20;
+scene.add(sun);
+
+// ---- physics + manager ----
+const phys = new RapierAdapter(RAPIER, { THREE, gravity: [0, -20, 0] });
+const man = new RayHitMan({ THREE, scene, physics: phys, fragmentLimit: 1500, groundY: 0, defaultFade: { type: FadeType.None } });
+let ready = false;
+
+const blockMat = new THREE.MeshStandardMaterial({ color: 0xb8c0cc, roughness: 0.85 });
+const innerMat = new THREE.MeshStandardMaterial({ color: 0x8a6d52, roughness: 1 });
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x21242b, roughness: 1 });
+const ballMat = new THREE.MeshStandardMaterial({ color: 0xff5a4f, roughness: 0.3, metalness: 0.4 });
+
+let wallRigids = [];
+
+function colorFor(name) {
+  return { Concrete: 0xb8c0cc, Brick: 0xb5562f, Glass: 0x9fd8e6, Wood: 0xa9763f, DenseRock: 0x8d8d96, Ice: 0xbfe9ff }[name] || 0xb8c0cc;
+}
+
+function buildGround() {
+  const g = new THREE.Mesh(new THREE.BoxGeometry(60, 1, 60), groundMat);
+  g.position.y = -0.5; g.receiveShadow = true; scene.add(g);
+  man.addRigid(g, { simType: SimType.Static });
+}
+
+function buildWall() {
+  for (const r of wallRigids) { if (r.mesh.parent) man.physics.removeBody(r.mesh); r.mesh.parent?.remove(r.mesh); man.rigids.delete(r); }
+  man.clear();
+  wallRigids = [];
+  const matName = $('mat').value;
+  const col = colorFor(matName);
+  const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.8 });
+  const inner = new THREE.MeshStandardMaterial({ color: new THREE.Color(col).multiplyScalar(0.5), roughness: 1 });
+  const cols = 7, rows = 5, bw = 1.5, bh = 1.0, bd = 1.0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const off = (y % 2) * bw * 0.5;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(bw * 0.97, bh * 0.97, bd), mat);
+      m.position.set((x - cols / 2) * bw + off, y * bh + bh / 2, 0);
+      m.castShadow = m.receiveShadow = true; scene.add(m);
+      const r = man.addRigid(m, {
+        simType: SimType.Dynamic, material: MaterialType[matName],
+        collider: 'box',
+        demolition: { type: 'voronoi', amount: 12, seed: x + y * 31, depth: 1, scatter: 0.8, minImpactSpeed: 9, innerMaterial: inner },
+        fade: { type: FadeType.ScaleDown, lifetime: 6, duration: 2 },
+        dust: { amount: 16, size: 0.45, color: 0xcfd4dc },
+        debris: { amount: 12, size: 0.09, color: col },
+      });
+      wallRigids.push(r);
+    }
+  }
+  $('stat').textContent = `${cols * rows} ${matName} blocks · click / launch / bomb`;
+}
+
+function launch() {
+  if (!ready) return;
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.6, 24, 16), ballMat);
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  ball.position.copy(camera.position).addScaledVector(dir, 2);
+  ball.castShadow = true; scene.add(ball);
+  const r = man.addRigid(ball, { simType: SimType.Dynamic, material: MaterialType.HeavyMetal, collider: 'sphere',
+    fade: { type: FadeType.Destroy, lifetime: 8 } });
+  phys.setLinearVelocity(ball, [dir.x * 40, dir.y * 40, dir.z * 40]);
+  man.registerFragment(r);
+}
+
+async function bomb() {
+  if (!ready) return;
+  const b = new RayHitBomb(man, { radius: 4.5, strength: 12, demolish: true, chaos: 0.3, upwardBias: 0.25, falloff: 'exponential' });
+  await b.explode([0, 2.2, 0]);
+}
+
+// tools: a Gun (left-click = raycast shot) and a Blade (X = slice block under cursor)
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), lastMouse = new THREE.Vector2();
+let gun = null, blade = null;
+function tools() { if (!gun) { gun = new RayHitGun(man, { impulse: 22, demolish: true }); blade = new RayHitBlade(man); } return { gun, blade }; }
+
+renderer.domElement.addEventListener('pointermove', e => lastMouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1));
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !ready) return;
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  tools().gun.shoot(ray.ray.origin.toArray(), ray.ray.direction.toArray()); // raycast → demolish + impulse
+});
+
+function sliceUnderCursor() {
+  if (!ready) return;
+  ray.setFromCamera(lastMouse, camera);
+  const hit = phys.raycast(ray.ray.origin.toArray(), ray.ray.direction.toArray(), 1000);
+  if (!hit || !hit.object) return;
+  const rg = hit.object.userData.rigid;
+  if (!rg) return;
+  // vertical cut plane: normal = camera-right (so the slice looks like a sword cut)
+  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+  const right = fwd.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+  tools().blade.cut(rg, hit.point, [right.x, right.y, right.z]);
+}
+
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); launch(); }
+  else if (e.key === 'b' || e.key === 'B') bomb();
+  else if (e.key === 'x' || e.key === 'X') sliceUnderCursor();
+  else if (e.key === 'r' || e.key === 'R') buildWall();
+});
+$('shoot').addEventListener('click', launch);
+$('bomb').addEventListener('click', bomb);
+$('rebuild').addEventListener('click', buildWall);
+$('mat').addEventListener('change', buildWall);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.033, clock.getDelta());
+  if (ready) man.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+(async () => {
+  await RAPIER.init();
+  await man.init();
+  buildGround(); buildWall();
+  ready = true;
+  window.__d = { man, phys, get wall() { return wallRigids; } };
+  loop();
+})().catch(err => { $('stat').textContent = 'Error: ' + err.message; console.error(err); });
+</script>
+</body>
+</html>
