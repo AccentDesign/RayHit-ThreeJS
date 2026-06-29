@@ -263,13 +263,19 @@ npm run demo            # python3 -m http.server 8088
 # http://localhost:8088/examples/shatter.html       — fracture primitives (geometry only)
 # http://localhost:8088/examples/destruction.html   — a brick wall: gun (click), blade (X), projectile, bomb
 # http://localhost:8088/examples/collapse.html       — tower/wall/cantilever: connectivity + gravity-stress collapse
-# http://localhost:8088/examples/character.html      — fracture a 3D character (supply your own model — see examples/models)
+# http://localhost:8088/examples/character.html      — fracture a 3D character (bring your own model; falls back to a placeholder)
 ```
 
 The demos load `three` and `rapier` from local `node_modules`, so they run
 offline. For concave/thin meshes (characters) pass `seedInside: true` so seeds
 are rejection-sampled inside the solid — you get the full requested fragment
 count instead of wasting cells on empty bounding-box space.
+
+**Bring your own character model.** `character.html` loads `.glb`/`.fbx` models
+from `examples/models/` (not shipped — they're third-party assets). If none are
+present it transparently **falls back to a placeholder figure** so the demo
+still runs; drop your own model in `examples/models/` and update the `MODELS`
+map at the top of `character.html`. See `examples/models/README.md`.
 
 ## Tests
 

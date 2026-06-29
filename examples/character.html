@@ -132,25 +132,37 @@ function extractGeometry(root, targetHeight = 2.6) {
   return merged;
 }
 
+/** Stand-in figure used when no model file is supplied, so the demo still runs. */
+function placeholderGeometry() {
+  const g = new THREE.CapsuleGeometry(0.55, 1.5, 8, 16); // ~2.6 units tall, watertight
+  g.translate(0, 1.3, 0);                                // sit on the ground
+  g.computeVertexNormals();
+  return g;
+}
+
 async function loadModel(key) {
   $('stat').textContent = 'loading model…';
   resetView(true);
   modelKey = key;
   const m = MODELS[key];
-  let root;
-  if (m.type === 'glb') root = (await gltfLoader.loadAsync(m.file)).scene;
-  else root = await fbxLoader.loadAsync(m.file);
-
-  solidGeom = extractGeometry(root);
-
-  // outer material: atlas texture if any, else a tone
-  if (m.atlas) {
-    const tex = await texLoader.loadAsync(m.atlas).catch(() => null);
-    if (tex) { tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false; }
-    outerMat = new THREE.MeshStandardMaterial({ map: tex, color: tex ? 0xffffff : 0xb9c0cc, roughness: 0.7, metalness: 0.05 });
-  } else {
-    outerMat = new THREE.MeshStandardMaterial({ color: 0xb9c0cc, roughness: 0.85 });
+  let placeholder = false;
+  try {
+    let root;
+    if (m.type === 'glb') root = (await gltfLoader.loadAsync(m.file)).scene;
+    else root = await fbxLoader.loadAsync(m.file);
+    solidGeom = extractGeometry(root);
+  } catch (e) {
+    // No model supplied (assets aren't shipped) — fall back to a placeholder so
+    // the fracturing still demonstrates. Bring your own: drop a model in
+    // examples/models/ and update MODELS above (see examples/models/README.md).
+    solidGeom = placeholderGeometry();
+    placeholder = true;
   }
+
+  // outer material: atlas texture if any (skipped for the placeholder), else a tone
+  let tex = null;
+  if (m.atlas && !placeholder) { tex = await texLoader.loadAsync(m.atlas).catch(() => null); if (tex) { tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false; } }
+  outerMat = new THREE.MeshStandardMaterial({ map: tex, color: tex ? 0xffffff : 0xb9c0cc, roughness: 0.78, metalness: 0.05 });
   innerMat = new THREE.MeshStandardMaterial({ color: m.inner, roughness: 1 });
 
   displayMesh = new THREE.Mesh(solidGeom, outerMat);
@@ -158,7 +170,9 @@ async function loadModel(key) {
   scene.add(displayMesh);
 
   const tris = solidGeom.attributes.position.count / 3;
-  $('stat').textContent = `${key} · ${tris | 0} triangles · ready`;
+  $('stat').textContent = placeholder
+    ? `no "${m.file}" — fracturing a placeholder. Drop your own model in examples/models/ (see README).`
+    : `${key} · ${tris | 0} triangles · ready`;
 }
 
 function clearFragments() {
