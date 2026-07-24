@@ -1,0 +1,9 @@
+{
+  "name": "rayhit-three",
+  "version": "0.1.0",
+  "type": "addon",
+  "engineRange": ">=0.12.0",
+  "entry": "rayhit-three",
+  "description": "Runtime mesh fracturing & physics destruction \u2014 Voronoi shattering, demolition, bombs, structural collapse. The engine's first add-on.",
+  "license": "UNLICENSED"
+}

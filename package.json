@@ -13,7 +13,8 @@
   "files": [
     "src",
     "README.md",
-    "docs"
+    "docs",
+    "sindicate.json"
   ],
   "scripts": {
     "test": "node test/run.js",
@@ -35,7 +36,7 @@
     "fragment"
   ],
   "peerDependencies": {
-    "three": "^0.185.0"
+    "three": ">=0.184.0 <0.186.0"
   },
   "peerDependenciesMeta": {
     "three": {

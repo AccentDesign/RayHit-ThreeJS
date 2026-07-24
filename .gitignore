@@ -7,3 +7,5 @@ node_modules/
 examples/models/*.fbx
 examples/models/*.glb
 examples/models/*.png
+*.sindicatepackage
+*.tgz
